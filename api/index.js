@@ -115,4 +115,5 @@ export {
   createProfileMetadataTypedData,
   createPostTypedData,
   createProfile,
+  createComment,
 } from "./mutations";

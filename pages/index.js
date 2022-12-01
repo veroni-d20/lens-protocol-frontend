@@ -163,6 +163,11 @@ export default function Home() {
                     {trimString(post.metadata.content, 200)}
                   </p>
                 </div>
+                <div>
+                  <button className={buttonStyle} onClick={savePost}>
+                    Comment
+                  </button>
+                </div>
               </div>
             </a>
           </Link>
@@ -228,4 +233,19 @@ const itemTypeStyle = css`
   font-size: 14px;
   color: rgba(0, 0, 0, 0.45);
   margin-bottom: 16px;
+`;
+
+const buttonStyle = css`
+  border: none;
+  outline: none;
+  background-color: rgb(249, 92, 255);
+  padding: 13px 24px;
+  color: #340036;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.35s;
+  &:hover {
+    background-color: rgba(249, 92, 255, 0.75);
+  }
 `;
