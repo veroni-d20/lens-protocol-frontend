@@ -1,74 +1,210 @@
-import { useContext, useRef } from 'react'
-import { css } from '@emotion/css'
-import { ethers } from 'ethers'
-import { getSigner } from '../utils'
-import { LENS_HUB_CONTRACT_ADDRESS, signCreatePostTypedData } from '../api'
-import { AppContext } from '../context'
-import LENSHUB from '../abi/lenshub'
-import { create } from 'ipfs-http-client'
-import { v4 as uuid } from 'uuid'
-import { refreshAuthToken, splitSignature } from '../utils'
+import { useContext, useRef } from "react";
+import { css } from "@emotion/css";
+import { ethers } from "ethers";
+import { getSigner } from "../utils";
+import { LENS_HUB_CONTRACT_ADDRESS, signCreatePostTypedData } from "../api";
+import { AppContext } from "../context";
+import LENSHUB from "../abi/lenshub";
+import { create } from "ipfs-http-client";
+import { v4 as uuid } from "uuid";
+import { refreshAuthToken, splitSignature } from "../utils";
+import { NFTStorage } from "nft.storage";
 
-const projectId = process.env.NEXT_PUBLIC_PROJECT_ID
-const projectSecret = process.env.NEXT_PUBLIC_PROJECT_SECRET
-const auth = 'Basic ' + Buffer.from(projectId + ':' + projectSecret).toString('base64');
+const projectId = process.env.NEXT_PUBLIC_PROJECT_ID;
+const projectSecret = process.env.NEXT_PUBLIC_PROJECT_SECRET;
+const auth =
+  "Basic " + Buffer.from(projectId + ":" + projectSecret).toString("base64");
+const token =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkaWQ6ZXRocjoweDRDNTI4NGRGOTJiYTIzNGYwYTM3MzU5MUEyOTA2NzIyYjI5NWE2MzkiLCJpc3MiOiJuZnQtc3RvcmFnZSIsImlhdCI6MTY2OTgzNjg5MzMwMSwibmFtZSI6ImRQYXNzd29yZCJ9.WzyidcCCn8zpIvxny1c8K0mIoEE2PK-ovGsEo26IGmg";
 
-const client = create({
-  host: 'ipfs.infura.io',
-  port: 5001,
-  protocol: 'https',
-  headers: {
-      authorization: auth,
-  },
-})
+// const client = create({
+//   host: 'ipfs.infura.io',
+//   port: 5001,
+//   protocol: 'https',
+//   headers: {
+//       authorization: auth,
+//   },
+// })
 
-export default function CreatePostModal({
-  setIsModalOpen
-}) {
-  const { profile } = useContext(AppContext)
-  const inputRef = useRef(null)
+const client = new NFTStorage({ token });
+
+export default function CreatePostModal({ setIsModalOpen }) {
+  const { profile } = useContext(AppContext);
+  const inputRef = useRef(null);
+  const hasTxBeenIndexed = async (input) => {
+    console.log(input["txHash"]);
+    const urqlClient = await createClient();
+    const result = await urqlClient
+      .query(
+        `query HasTxHashBeenIndexed {
+        hasTxHashBeenIndexed(request: { txHash: "${input["txHash"]}" } ) {
+          ... on TransactionIndexedResult {
+            indexed
+            txReceipt {
+              to
+              from
+              contractAddress
+              transactionIndex
+              root
+              gasUsed
+              logsBloom
+              blockHash
+              transactionHash
+              blockNumber
+              confirmations
+              cumulativeGasUsed
+              effectiveGasPrice
+              byzantium
+              type
+              status
+              logs {
+                blockNumber
+                blockHash
+                transactionIndex
+                removed
+                address
+                data
+                topics
+                transactionHash
+                logIndex
+              }
+            }
+            metadataStatus {
+              status
+              reason
+            }
+          }
+          ... on TransactionError {
+            reason
+            txReceipt {
+              to
+              from
+              contractAddress
+              transactionIndex
+              root
+              gasUsed
+              logsBloom
+              blockHash
+              transactionHash
+              blockNumber
+              confirmations
+              cumulativeGasUsed
+              effectiveGasPrice
+              byzantium
+              type
+              status
+              logs {
+                blockNumber
+                blockHash
+                transactionIndex
+                removed
+                address
+                data
+                topics
+                transactionHash
+                logIndex
+              }
+            }
+          },
+          __typename
+        }
+      }`
+      )
+      .toPromise();
+
+    console.log(result.data.hasTxHashBeenIndexed);
+
+    return result.data.hasTxHashBeenIndexed;
+  };
+
+  const pollUntilIndexed = async (txHash) => {
+    console.log(txHash);
+    while (true) {
+      const response = await hasTxBeenIndexed(txHash);
+      console.log("pool until indexed: result", response);
+
+      if (response.__typename === "TransactionIndexedResult") {
+        console.log("pool until indexed: indexed", response.indexed);
+        console.log(
+          "pool until metadataStatus: metadataStatus",
+          response.metadataStatus
+        );
+
+        console.log(response.metadataStatus);
+        if (response.metadataStatus) {
+          if (response.metadataStatus.status === "SUCCESS") {
+            return response;
+          }
+
+          if (response.metadataStatus.status === "METADATA_VALIDATION_FAILED") {
+            throw new Error(response.metadataStatus.status);
+          }
+        } else {
+          if (response.indexed) {
+            return response;
+          }
+        }
+
+        console.log(
+          "pool until indexed: sleep for 1500 milliseconds then try again"
+        );
+        // sleep for a second before trying again
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      } else {
+        // it got reverted and failed!
+        throw new Error(response.reason);
+      }
+    }
+  };
+
   async function uploadToIPFS() {
     const metaData = {
-      version: '2.0.0',
+      version: "2.0.0",
       content: inputRef.current.innerHTML,
       description: inputRef.current.innerHTML,
       name: `Post by @${profile.handle}`,
       external_url: `https://lenster.xyz/u/${profile.handle}`,
       metadata_id: uuid(),
-      mainContentFocus: 'TEXT_ONLY',
+      mainContentFocus: "TEXT_ONLY",
       attributes: [],
-      locale: 'en-US',
-    }
-
-    const added = await client.add(JSON.stringify(metaData))
-    const uri = `https://ipfs.infura.io/ipfs/${added.path}`
-    return uri
+      locale: "en-US",
+    };
+    const cid = await client.storeBlob(new Blob([metaData]));
+    console.log(cid);
+    // const added = await client.add(JSON.stringify(metaData))
+    const uri = `https://cloudflare-ipfs.com/ipfs/${cid}`;
+    return uri;
   }
 
   async function savePost() {
-    const contentURI = await uploadToIPFS()
-    const { accessToken } = await refreshAuthToken()
+    const contentURI = await uploadToIPFS();
+    console.log(contentURI);
+    const { accessToken } = await refreshAuthToken();
+    console.log(profile);
     const createPostRequest = {
       profileId: profile.id,
       contentURI,
       collectModule: {
-        freeCollectModule: { followerOnly: true }
+        freeCollectModule: { followerOnly: true },
       },
       referenceModule: {
-        followerOnlyReferenceModule: false
+        followerOnlyReferenceModule: false,
       },
-    }
+    };
 
     try {
-      const signedResult = await signCreatePostTypedData(createPostRequest, accessToken)
-      const typedData = signedResult.result.typedData
-      const { v, r, s } = splitSignature(signedResult.signature)
+      const signedResult = await signCreatePostTypedData(
+        createPostRequest,
+        accessToken
+      );
+      const typedData = signedResult.result.typedData;
+      const { v, r, s } = splitSignature(signedResult.signature);
 
       const contract = new ethers.Contract(
         LENS_HUB_CONTRACT_ADDRESS,
         LENSHUB,
         getSigner()
-      )
+      );
 
       const tx = await contract.postWithSig({
         profileId: typedData.value.profileId,
@@ -83,14 +219,13 @@ export default function CreatePostModal({
           s,
           deadline: typedData.value.deadline,
         },
-      })
+      });
 
-      await tx.wait()
-      console.log('successfully created post: tx hash', tx.hash)
-      setIsModalOpen(false)
-      
+      await tx.wait();
+      console.log("successfully created post: tx hash", tx.hash);
+      setIsModalOpen(false);
     } catch (err) {
-      console.log('error: ', err)
+      console.log("error: ", err);
     }
   }
   return (
@@ -98,80 +233,70 @@ export default function CreatePostModal({
       <div className={contentContainerStyle}>
         <div className={topBarStyle}>
           <div className={topBarTitleStyle}>
-            <p>
-              Create post
-            </p>
+            <p>Create post</p>
           </div>
           <div onClick={() => setIsModalOpen(false)}>
-            <img
-              src="/close.svg"
-              className={createPostIconStyle}
-            />
+            <img src="/close.svg" className={createPostIconStyle} />
           </div>
         </div>
         <div className={contentStyle}>
           <div className={bottomContentStyle}>
-            <div
-              className={postInputStyle}
-              contentEditable
-              ref={inputRef}
-            />
+            <div className={postInputStyle} contentEditable ref={inputRef} />
             <div className={buttonContainerStyle}>
-              <button
-                className={buttonStyle}
-                onClick={savePost}
-              >Create Post</button>
+              <button className={buttonStyle} onClick={savePost}>
+                Create Post
+              </button>
             </div>
           </div>
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 const buttonStyle = css`
   border: none;
   outline: none;
-  background-color: rgb(249, 92, 255);;
+  background-color: rgb(249, 92, 255);
   padding: 13px 24px;
   color: #340036;
   border-radius: 10px;
   font-weight: 600;
   cursor: pointer;
-  transition: all .35s;
+  transition: all 0.35s;
   &:hover {
-    background-color: rgba(249, 92, 255, .75);
+    background-color: rgba(249, 92, 255, 0.75);
   }
-`
+`;
 
 const buttonContainerStyle = css`
   display: flex;
   justify-content: flex-end;
   margin-top: 15px;
-`
+`;
 
 const postInputStyle = css`
-  border: 1px solid rgba(0, 0, 0, .14);
+  border: 1px solid rgba(0, 0, 0, 0.14);
   border-radius: 8px;
   width: 100%;
   min-height: 60px;
   padding: 12px 14px;
   font-weight: 500;
-`
+`;
 
 const bottomContentStyle = css`
   margin-top: 10px;
   max-height: 300px;
   overflow: scroll;
-`
+`;
 
 const topBarStyle = css`
   display: flex;
   align-items: flex-end;
-  border-bottom: 1px solid rgba(0, 0, 0, .1);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
   padding-bottom: 13px;
   padding: 15px 25px;
-`
+`;
 
 const topBarTitleStyle = css`
   flex: 1;
@@ -179,14 +304,14 @@ const topBarTitleStyle = css`
     margin: 0;
     font-weight: 600;
   }
-`
+`;
 
 const contentContainerStyle = css`
   background-color: white;
   border-radius: 10px;
-  border: 1px solid rgba(0, 0, 0, .15);
+  border: 1px solid rgba(0, 0, 0, 0.15);
   width: 700px;
-`
+`;
 
 const containerStyle = css`
   position: fixed;
@@ -198,17 +323,17 @@ const containerStyle = css`
   display: flex;
   justify-content: center;
   align-items: center;
-  background-color: rgba(0, 0, 0, .35);
+  background-color: rgba(0, 0, 0, 0.35);
   h1 {
     margin: 0;
   }
-`
+`;
 
 const contentStyle = css`
   padding: 15px 25px;
-`
+`;
 
 const createPostIconStyle = css`
   height: 20px;
   cursor: pointer;
-`
+`;

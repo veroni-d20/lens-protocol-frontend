@@ -163,11 +163,11 @@ export default function Home() {
                     {trimString(post.metadata.content, 200)}
                   </p>
                 </div>
-                <div>
-                  <button className={buttonStyle} onClick={savePost}>
+                {/* <div>
+                  <button className={buttonStyle} onClick={saveComment}>
                     Comment
                   </button>
-                </div>
+                </div> */}
               </div>
             </a>
           </Link>

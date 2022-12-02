@@ -6,7 +6,6 @@ import {
   LENS_HUB_CONTRACT_ADDRESS,
   signCreatePostTypedData,
   createProfile,
-  hasTxBeenIndexedQuery,
   createClient,
 } from "../api";
 import LENSHUB from "../abi/lenshub";
@@ -197,7 +196,7 @@ export default function CreateProfileModal({ setIsModalOpen }) {
       <div className={contentContainerStyle}>
         <div className={topBarStyle}>
           <div className={topBarTitleStyle}>
-            <p>Create post</p>
+            <p>Create Profile</p>
           </div>
           <div onClick={() => setIsModalOpen(false)}>
             <img src="/close.svg" className={createPostIconStyle} />
@@ -209,7 +208,7 @@ export default function CreateProfileModal({ setIsModalOpen }) {
             <div className={postInputStyle} contentEditable ref={imageRef} />
             <div className={buttonContainerStyle}>
               <button className={buttonStyle} onClick={postProfile}>
-                Create Post
+                Create Profile
               </button>
             </div>
           </div>
